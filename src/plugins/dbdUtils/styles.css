@@ -1,0 +1,13 @@
+.ac-danger-button {
+    color: var(--status-danger);
+}
+
+div[class*="focused"].ac-danger-button:not(:active) {
+    color: var(--white);
+    background-color: var(--menu-item-danger-hover-bg) !important;
+}
+
+.ac-danger-button:active {
+    color: var(--white);
+    background-color: var(--menu-item-danger-active-bg) !important;
+}
