@@ -1,0 +1,32 @@
+name: Sync Fork with Upstream
+
+on:
+    schedule:
+        - cron: "0 0 * * *"
+    workflow_dispatch:
+
+jobs:
+    sync:
+        runs-on: ubuntu-latest
+        steps:
+            - name: Checkout repository
+              uses: actions/checkout@v2
+
+            - name: Set up Git
+              run: |
+                  git config user.name "wraithy"
+                  git config user.email "hello@wraith.to"
+
+            - name: Add upstream remote
+              run: git remote add upstream https://github.com/Vendicated/Vencord.git
+
+            - name: Fetch upstream changes
+              run: git fetch upstream
+
+            - name: Merge upstream changes
+              run: git merge upstream/main
+
+            - name: Push changes to fork
+              run: git push origin main
+              env:
+                  GITHUB_TOKEN: ${{ secrets.GITHUB_TOKEN }}
