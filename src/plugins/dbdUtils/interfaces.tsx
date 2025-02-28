@@ -8,6 +8,7 @@ import { Channel, User } from "discord-types/general";
 
 interface UserData {
     id: string;
+    globalname: string;
     username: string;
     avatar: string;
 }

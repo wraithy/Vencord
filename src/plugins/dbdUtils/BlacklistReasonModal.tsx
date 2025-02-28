@@ -4,10 +4,14 @@
  * SPDX-License-Identifier: GPL-3.0-or-later
  */
 
+import "./styles.css";
+
+import { localStorage } from "@utils/localStorage";
 import { ModalCloseButton, ModalContent, ModalFooter, ModalHeader, ModalRoot, ModalSize, openModal } from "@utils/modal";
 import { Button, Text, TextInput, useState } from "@webpack/common";
 
 import { blacklist } from "./functions";
+import { Settings } from "./util";
 
 function ModalComponent(props) {
     const [reason, setReason] = useState("");
@@ -15,18 +19,24 @@ function ModalComponent(props) {
     const handleConfirm = () => {
         const { userId, onClose } = props;
         const userIds = userId.split(" ");
-        userIds.forEach(id => blacklist(id, reason));
+        userIds.forEach(id => {
+            if (Settings.store.blacklist && Settings.store.blacklist.split(" ").includes(id)) {
+                localStorage.setItem(`dbd-lfg-blacklist-reason-${id}`, reason);
+            } else {
+                blacklist(userId, reason);
+            }
+        });
         onClose();
     };
 
     return (
         <ModalRoot {...props} size={ModalSize.SMALL}>
             <ModalHeader>
-                <Text variant="heading-lg/semibold" style={{ flexGrow: 1 }}>Blacklist Reason</Text>
+                <Text variant="heading-lg/semibold" className="modal-header-text">Blacklist Reason</Text>
                 <ModalCloseButton onClick={props.onClose} />
             </ModalHeader>
             <ModalContent>
-                <div className="modal-main-container" style={{ display: "flex", flexDirection: "column", gap: "0.4em", width: "100%", paddingTop: "1em", paddingBottom: "1em" }}>
+                <div className="modal-main-container">
                     <TextInput
                         placeholder="Enter a reason"
                         value={reason}
@@ -36,12 +46,12 @@ function ModalComponent(props) {
                 </div>
             </ModalContent>
             <ModalFooter>
-                <div style={{ display: "flex", gap: "1em" }}>
+                <div className="modal-footer">
                     <Button color={Button.Colors.TRANSPARENT} onClick={props.onClose}>Cancel</Button>
                     <Button color={Button.Colors.RED} onClick={handleConfirm}>Confirm</Button>
                 </div>
             </ModalFooter>
-        </ModalRoot>
+        </ModalRoot >
     );
 }
 

@@ -72,15 +72,21 @@ const blacklist = async (userId: string, reason?: string) => {
             .split(" ")
             .filter(id => id !== userId)
             .join(" ");
+
         localStorage.removeItem(`dbd-lfg-blacklist-reason-${userId}`);
         localStorage.setItem("dbd-lfg-autoban-users", localStorage.getItem("dbd-lfg-autoban-users")?.split(" ").filter(id => id !== userId).join(" ") || "");
+
+        return { action: "unblacklist", userId };
     } else {
         Settings.store.blacklist = blacklistList
             ? `${blacklistList} ${userId}`
             : userId;
+
         if (reason) {
             localStorage.setItem(`dbd-lfg-blacklist-reason-${userId}`, reason);
         }
+
+        return { action: "blacklist", userId };
     }
 };
 
@@ -126,11 +132,16 @@ const banUser = async (userId: string, guildId: string) => {
         url: Constants.Endpoints.INTERACTIONS,
         body: postData,
     }).then(response => {
-        localStorage.setItem("dbd-lfg-banned-users", (localStorage.getItem("dbd-lfg-banned-users")?.split(" ") || []).join(" ") + " " + userId);
         console.log("Ban interaction sent successfully!", response);
+
+        const bannedUsers = localStorage.getItem("dbd-lfg-banned-users") || "";
+        const bannedUsersArray = bannedUsers.trim().split(" ").filter(Boolean);
+        const updatedBannedUsers = [...bannedUsersArray, userId].join(" ");
+
+        localStorage.setItem("dbd-lfg-banned-users", updatedBannedUsers);
     }).catch(error => {
         console.error("Error sending ban interaction:", error);
     });
 };
 
-export { autoBanUser, banUser, blacklist, getUserId, inChannel };
+export { autoBanUser, banUser, blacklist, clearLocalStorage, getUserId, inAChannel, inChannel };
