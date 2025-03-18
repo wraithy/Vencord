@@ -16,16 +16,17 @@ import {
     ModalSize,
     openModal
 } from "@utils/modal";
-import { Button, Text, useEffect, UserUtils, useState } from "@webpack/common";
+import { Button, Text, useEffect, useState } from "@webpack/common";
 
 import { openBlacklistReasonModal } from "./BlacklistReasonModal";
-import { banUser, blacklist, clearLocalStorage, inAChannel } from "./functions";
+import { banUser, blacklist, clearLocalStorage, getUserId, getUserInfo, inAChannel } from "./functions";
 import { UserData } from "./interfaces";
 import { Settings } from "./util";
 
 function ModalComponent(props) {
     const [blacklistedUsers, setBlacklistedUsers] = useState<UserData[]>([]);
     const [bannedUsers, setBannedUsers] = useState<UserData[]>([]);
+    const [userHistory, setUserHistory] = useState<UserData[]>([]);
     const [selectedUsers, setSelectedUsers] = useState<Set<string>>(new Set());
     useEffect(() => {
         if (!inAChannel) {
@@ -36,10 +37,7 @@ function ModalComponent(props) {
             const fetchedBlacklistedUsers = await Promise.all(
                 Settings.store.blacklist
                     ?.split(" ")
-                    .map(async id => {
-                        const userInfo = await getUserInfo(id);
-                        return userInfo;
-                    })
+                    .map(async id => await getUserInfo(id))
                     .filter(user => user !== null) || []
             );
             fetchedBlacklistedUsers.sort((a, b) => (a!.globalname || "").localeCompare(b!.globalname || ""));
@@ -48,38 +46,25 @@ function ModalComponent(props) {
             const fetchedBannedUsers = await Promise.all(
                 localStorage.getItem("dbd-lfg-banned-users")
                     ?.split(" ")
-                    .map(async id => {
-                        const userInfo = await getUserInfo(id);
-                        return userInfo;
-                    })
+                    .map(async id => await getUserInfo(id))
                     .filter(user => user !== null) || []
             );
             fetchedBannedUsers.sort((a, b) => (a!.globalname || "").localeCompare(b!.globalname || ""));
             setBannedUsers(fetchedBannedUsers as UserData[]);
+
+            const historyUsersRaw = localStorage.getItem("dbd-lfg-user-history") || "[]";
+            let historyUsers: UserData[] = JSON.parse(historyUsersRaw);
+
+            historyUsers = historyUsers.filter(user =>
+                !fetchedBlacklistedUsers.some(blUser => blUser!.id === user.id) &&
+                !fetchedBannedUsers.some(banUser => banUser!.id === user.id)
+            );
+
+            setUserHistory(historyUsers);
         };
 
-        if (Settings.store.blacklist && Settings.store.blacklist.split(" ").length > 0) {
-            fetchUsers();
-        }
+        fetchUsers();
     }, []);
-
-    const getUserInfo = async (id: string) => {
-        try {
-            const user = await UserUtils.getUser(id);
-            if (user) {
-                return {
-                    id: id,
-                    username: user.username,
-                    globalname: user.globalName || null,
-                    avatar: user.getAvatarURL()
-                };
-            }
-            return null;
-        } catch (error) {
-            console.error(error);
-            return null;
-        }
-    };
 
     const handleUserSelect = (userId: string) => {
         const newSelectedUsers = new Set(selectedUsers);
@@ -103,7 +88,7 @@ function ModalComponent(props) {
     const handleBanSelected = () => {
         const selectedIds = Array.from(selectedUsers).join(" ");
         if (selectedIds.length > 0) {
-            banUser(selectedIds, "153566829380370432");
+            banUser(selectedIds, "153566829380370432", setBannedUsers);
             setSelectedUsers(new Set());
         }
     };
@@ -131,9 +116,11 @@ function ModalComponent(props) {
 
         const bannedUserIds = bannedUsers.map(user => user.id);
         const blacklistedUserIds = blacklistedUsers.map(user => user.id);
+        const historyUserIds = userHistory.map(user => user.id);
 
         const usersToBlacklist = selectedIds.filter(userId =>
-            bannedUserIds.includes(userId) && !blacklistedUserIds.includes(userId)
+            (bannedUserIds.includes(userId) || historyUserIds.includes(userId)) &&
+            !blacklistedUserIds.includes(userId)
         );
 
         const usersAlreadyBlacklisted = selectedIds.filter(userId =>
@@ -144,13 +131,16 @@ function ModalComponent(props) {
             Promise.all(
                 usersToBlacklist.map(userId => blacklist(userId))
             ).then(results => {
-                const newBlacklistedUsers = results.filter(result => result.action === "blacklist")
-                    .map(result => bannedUsers.find(user => user.id === result.userId));
+                const newBlacklistedUsers = results
+                    .filter(result => result.action === "blacklist")
+                    .map(result => [...bannedUsers, ...userHistory].find(user => user.id === result.userId));
 
                 const updatedBlacklistedUsers = [...blacklistedUsers, ...newBlacklistedUsers].filter(Boolean);
                 updatedBlacklistedUsers.sort((a, b) => (a!.globalname || "").localeCompare(b!.globalname || ""));
                 setBlacklistedUsers(updatedBlacklistedUsers as UserData[]);
+
                 setBannedUsers(prev => prev.filter(user => !usersToBlacklist.includes(user.id)));
+                setUserHistory(prev => prev.filter(user => !usersToBlacklist.includes(user.id)));
             });
         }
 
@@ -163,9 +153,9 @@ function ModalComponent(props) {
                 updatedBlacklistedUsers.sort((a, b) => (a!.globalname || "").localeCompare(b!.globalname || ""));
                 setBlacklistedUsers(updatedBlacklistedUsers);
 
-                const unblacklistedUsers = usersAlreadyBlacklisted.filter(userId =>
-                    !bannedUserIds.includes(userId)
-                ).map(userId => blacklistedUsers.find(user => user.id === userId));
+                const unblacklistedUsers = usersAlreadyBlacklisted
+                    .filter(userId => !bannedUserIds.includes(userId))
+                    .map(userId => blacklistedUsers.find(user => user.id === userId));
 
                 const updatedBannedUsers = [...bannedUsers, ...unblacklistedUsers].filter(Boolean);
                 updatedBannedUsers.sort((a, b) => (a!.globalname || "").localeCompare(b!.globalname || ""));
@@ -174,7 +164,6 @@ function ModalComponent(props) {
         }
         setSelectedUsers(new Set());
     };
-
 
     const handleReason = () => {
         const selectedIds = Array.from(selectedUsers).join(" ");
@@ -189,12 +178,20 @@ function ModalComponent(props) {
         !blacklistedUsers.some(blacklistedUser => blacklistedUser.id === bannedUser.id)
     );
 
+    const filterUserHistory = userHistory.filter(user => {
+        const isBanned = bannedUsers.some(bannedUser => bannedUser.id === user.id);
+        const isBlacklisted = blacklistedUsers.some(blacklistedUser => blacklistedUser.id === user.id);
+        const self = user.id === getUserId();
+        return !isBanned && !isBlacklisted && !self;
+    });
+
     const getBlacklistButtonText = () => {
         const selectedIds = Array.from(selectedUsers);
         const hasBlacklisted = selectedIds.some(userId => blacklistedUsers.some(user => user.id === userId));
         const hasNonBlacklisted = selectedIds.some(userId => bannedUsers.some(user => user.id === userId) && !blacklistedUsers.some(user => user.id === userId));
+        const hasUserHistory = selectedIds.some(userId => userHistory.some(user => user.id === userId));
 
-        if (hasBlacklisted && hasNonBlacklisted) {
+        if ((hasBlacklisted && hasNonBlacklisted) || (hasBlacklisted && hasUserHistory)) {
             return "Blacklist & Unblacklist";
         } else if (hasNonBlacklisted) {
             return "Blacklist";
@@ -229,14 +226,14 @@ function ModalComponent(props) {
                                         <span className="user-id">{user.id}</span>
                                     </div>
                                 </div>
-                                <p className="user-reason">{localStorage.getItem(`dbd-lfg-blacklist-reason-${user.id}`) || "No reason provided."}</p>
-                                <p className="user-status">{localStorage.getItem("dbd-lfg-autoban-users")?.split(" ").includes(user.id) ? "Auto-Banned" : localStorage.getItem("dbd-lfg-banned-users")?.split(" ").includes(user.id) ? "Banned" : null}</p>
+                                <span className="user-reason">{localStorage.getItem(`dbd-lfg-blacklist-reason-${user.id}`) || "No reason provided."}</span>
+                                <span className="user-status">{localStorage.getItem("dbd-lfg-autoban-users")?.split(" ").includes(user.id) ? "Auto-Banned" : localStorage.getItem("dbd-lfg-banned-users")?.split(" ").includes(user.id) ? "Banned" : null}</span>
                             </div>
                         ))
                     ) : (
                         <Text>No users are blacklisted.</Text>
                     )}
-                    {filteredBannedUsers.length > 0 && <span className="banned-section">Not Blacklisted</span>}
+                    {filteredBannedUsers.length > 0 && <span className="unblacklisted-section">Not Blacklisted</span>}
                     {filteredBannedUsers?.length > 0 ? (
                         filteredBannedUsers.map(user => (
                             <div key={user.id} onClick={() => handleUserSelect(user.id)} className={`user-card ${selectedUsers.has(user.id) ? "selected" : ""}`}>
@@ -254,10 +251,37 @@ function ModalComponent(props) {
                                         <span className="user-id">{user.id}</span>
                                     </div>
                                 </div>
-                                <p className="user-reason"></p>
-                                <p className="user-status">Banned</p>
+                                <span className="user-reason"></span>
+                                <span className="user-status">{localStorage.getItem("dbd-lfg-banned-users")?.split(" ").includes(user.id) ? "Banned" : null}</span>
                             </div>
                         ))
+                    ) : null}
+                    {filterUserHistory.length > 0 && <span className="history-section">User History</span>}
+                    {filterUserHistory.length > 0 ? (
+                        <div className="history-container">
+                            {filterUserHistory.map(user => (
+                                <div key={user.id} onClick={() => handleUserSelect(user.id)} className={`user-card ${selectedUsers.has(user.id) ? "selected" : ""}`}>
+                                    <input
+                                        type="checkbox"
+                                        checked={selectedUsers.has(user.id)}
+                                        onChange={() => handleUserSelect(user.id)}
+                                        className="user-checkbox"
+                                    />
+                                    <div className="user-info">
+                                        <img className="user-avatar" width="46px" height="46px" src={user.avatar} alt="" />
+                                        <div className="user-details">
+                                            <span className="user-globalname">{user.globalname}</span>
+                                            <span className="user-username">{user.username}</span>
+                                            <span className="user-id">{user.id}</span>
+                                        </div>
+                                    </div>
+                                    <span className="join-timestamp">
+                                        <span>{new Date(user.timestamp).toLocaleDateString("en-US", { month: "short", day: "numeric", year: "numeric" })}</span>
+                                        <span>{new Date(user.timestamp).toLocaleTimeString("en-US", { hour: "numeric", minute: "numeric" })}</span>
+                                    </span>
+                                </div>
+                            ))}
+                        </div>
                     ) : null}
                 </div>
             </ModalContent>
@@ -304,7 +328,7 @@ function ModalComponent(props) {
                         onClick={handleSelectAll}
                         disabled={blacklistedUsers.length === 0}
                     >
-                        {blacklistedUsers.length === 0 ? "Select All" : (selectedUsers.size === blacklistedUsers.length ? "Deselect All" : "Select All")}
+                        {blacklistedUsers.length === 0 ? "Select All" : (selectedUsers.size === blacklistedUsers.length ? "Deselect Blacklisted" : "Select Blacklisted")}
                     </Button>
                 </div>
             </ModalFooter>

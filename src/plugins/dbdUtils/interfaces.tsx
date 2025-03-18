@@ -11,6 +11,7 @@ interface UserData {
     globalname: string;
     username: string;
     avatar: string;
+    timestamp: number;
 }
 
 interface Session {

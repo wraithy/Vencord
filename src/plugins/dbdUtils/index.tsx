@@ -130,8 +130,8 @@ export default definePlugin({
         {
             find: "renderChannelButtons(){let{channel",
             replacement: {
-                match: /(let c=eb.default.getId\(\);)/,
-                replace: "$1;$self.exec(this.props.channel);"
+                match: /(let c=[^;]*;)/,
+                replace: "$1$self.exec(this.props.channel);"
             }
         }
     ],
